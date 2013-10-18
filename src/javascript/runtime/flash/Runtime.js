@@ -137,11 +137,11 @@ define("moxie/runtime/flash/Runtime", [
 			upload_filesize: function(size) {
 				return Basic.parseSizeStr(size) >= 2097152 ? 'client' : 'browser';
 			}
-		}, 'client');
+		});
 
 
-		// minimal requirement Flash Player 10
-		if (getShimVersion() < 10) {
+		// minimal requirement for Flash Player version
+		if (getShimVersion() < 11.3) {
 			this.mode = false; // with falsy mode, runtime won't operable, no matter what the mode was before
 		}
 

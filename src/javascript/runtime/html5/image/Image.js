@@ -26,7 +26,7 @@ define("moxie/runtime/html5/image/Image", [
 	
 	function HTML5Image() {
 		var me = this
-		, _img, _imgInfo, _canvas, _binStr, _srcBlob
+		, _img, _imgInfo, _canvas, _binStr, _blob
 		, _modified = false // is set true whenever image is modified
 		, _preserveHeaders = true
 		;
@@ -41,18 +41,14 @@ define("moxie/runtime/html5/image/Image", [
 					throw new x.RuntimeError(x.RuntimeError.NOT_SUPPORTED_ERR);
 				}
 
+				_blob = blob;
+
 				if (blob.isDetached()) {
-					_srcBlob = {
-						name: blob.name,
-						size: blob.size,
-						type: blob.type
-					};
 					_binStr = blob.getSource();
 					_preload.call(this, _binStr);
 					return;
 				} else {
-					_srcBlob = blob.getSource();
-					_readAsDataUrl.call(this, _srcBlob, function(dataUrl) {
+					_readAsDataUrl.call(this, blob.getSource(), function(dataUrl) {
 						if (asBinary) {
 							_binStr = _toBinary(dataUrl);
 						}
@@ -64,11 +60,11 @@ define("moxie/runtime/html5/image/Image", [
 			loadFromImage: function(img, exact) {
 				this.meta = img.meta;
 
-				_srcBlob = {
+				_blob = new Blob(null, {
 					name: img.name,
 					size: img.size,
 					type: img.type
-				};
+				});
 
 				_preload.call(this, exact ? (_binStr = img.getAsBinaryString()) : img.getAsDataURL());
 			},
@@ -83,9 +79,9 @@ define("moxie/runtime/html5/image/Image", [
 				info = {
 					width: _getImg().width || 0,
 					height: _getImg().height || 0,
-					type: _srcBlob.type || Mime.getFileMime(_srcBlob.name),
-					size: _binStr && _binStr.length || _srcBlob.size || 0,
-					name: _srcBlob.name || '',
+					type: _blob.type || Mime.getFileMime(_blob.name),
+					size: _binStr && _binStr.length || _blob.size || 0,
+					name: _blob.name || '',
 					meta: _imgInfo && _imgInfo.meta || this.meta || {}
 				};
 
@@ -228,7 +224,7 @@ define("moxie/runtime/html5/image/Image", [
 				comp.trigger('load');
 			};
 
-			_img.src = /^data:[^;]*;base64,/.test(str) ? str : _toDataUrl(str, _srcBlob.type);
+			_img.src = /^data:[^;]*;base64,/.test(str) ? str : _toDataUrl(str, _blob.type);
 		}
 
 
@@ -251,18 +247,27 @@ define("moxie/runtime/html5/image/Image", [
 		}
 
 		function _downsize(width, height, crop, preserveHeaders) {
-			var self = this, ctx, scale, mathFn, x, y, img, imgWidth, imgHeight, orientation;
+			var self = this
+			, scale
+			, mathFn
+			, x = 0
+			, y = 0
+			, img
+			, destWidth
+			, destHeight
+			, orientation
+			;
 
-			_preserveHeaders = preserveHeaders; // we will need to check this on export
+			_preserveHeaders = preserveHeaders; // we will need to check this on export (see getAsBinaryString())
 
 			// take into account orientation tag
 			orientation = (this.meta && this.meta.tiff && this.meta.tiff.Orientation) || 1;
 
 			if (Basic.inArray(orientation, [5,6,7,8]) !== -1) { // values that require 90 degree rotation
 				// swap dimensions
-				var mem = width;
+				var tmp = width;
 				width = height;
-				height = mem;
+				height = tmp;
 			}
 
 			img = _getImg();
@@ -277,34 +282,40 @@ define("moxie/runtime/html5/image/Image", [
 				return;
 			}
 
-			imgWidth = Math.round(img.width * scale);
-			imgHeight = Math.round(img.height * scale);
-
 			// prepare canvas if necessary
 			if (!_canvas) {
 				_canvas = document.createElement("canvas");
 			}
 
-			ctx = _canvas.getContext('2d');
+			// calculate dimensions of proportionally resized image
+			destWidth = Math.round(img.width * scale);	
+			destHeight = Math.round(img.height * scale);
+
 
 			// scale image and canvas
 			if (crop) {
 				_canvas.width = width;
 				_canvas.height = height;
+
+				// if dimensions of the resulting image still larger than canvas, center it
+				if (destWidth > width) {
+					x = Math.round((destWidth - width) / 2);
+				}
+
+				if (destHeight > height) {
+					y = Math.round((destHeight - height) / 2);
+				}
 			} else {
-				_canvas.width = imgWidth;
-				_canvas.height = imgHeight;
+				_canvas.width = destWidth;
+				_canvas.height = destHeight;
 			}
 
-			// if dimensions of the resulting image still larger than canvas, center it
-			x = imgWidth > _canvas.width ? Math.round((imgWidth - _canvas.width) / 2)  : 0;
-			y = imgHeight > _canvas.height ? Math.round((imgHeight - _canvas.height) / 2) : 0;
-
+			// rotate if required, according to orientation tag
 			if (!_preserveHeaders) {
 				_rotateToOrientaion(_canvas.width, _canvas.height, orientation);
 			}
 
-			_drawToCanvas.call(this, img, _canvas, -x, -y, imgWidth, imgHeight);
+			_drawToCanvas.call(this, img, _canvas, -x, -y, destWidth, destHeight);
 
 			this.width = _canvas.width;
 			this.height = _canvas.height;
@@ -402,7 +413,7 @@ define("moxie/runtime/html5/image/Image", [
 				_imgInfo.purge();
 				_imgInfo = null;
 			}
-			_binStr = _img = _canvas = null;
+			_binStr = _img = _canvas = _blob = null;
 			_modified = false;
 		}
 	}

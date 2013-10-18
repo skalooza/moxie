@@ -1,6 +1,6 @@
 /**
  * mOxie - multi-runtime File API & XMLHttpRequest L2 Polyfill
- * v1.0.0alpha
+ * v1.0.0
  *
  * Copyright 2013, Moxiecode Systems AB
  * Released under GPL License.
@@ -8,7 +8,7 @@
  * License: http://www.plupload.com/license
  * Contributing: http://www.plupload.com/contributing
  *
- * Date: 2012-11-13
+ * Date: 2013-09-23
  */
 /**
  * Compiled inline version. (Library mode)
@@ -757,6 +757,11 @@ define("moxie/core/utils/Env", [
 			sv: "MSIE"
 		},{
 			s1: navigator.userAgent,
+			s2: "Trident",
+			id: "IE",
+			sv: "rv"
+		}, {
+			s1: navigator.userAgent,
 			s2: "Gecko",
 			id: "Mozilla",
 			sv: "rv"
@@ -942,7 +947,6 @@ define('moxie/core/utils/Dom', ['moxie/core/utils/Env'], function(Env) {
 		if (typeof id !== 'string') {
 			return id;
 		}
-
 		return document.getElementById(id);
 	};
 
@@ -955,14 +959,11 @@ define('moxie/core/utils/Dom', ['moxie/core/utils/Env'], function(Env) {
 	@param {String} name Class name
 	*/
 	var hasClass = function(obj, name) {
-		var regExp;
-
-		if (obj.className === '') {
+		if (!obj.className) {
 			return false;
 		}
 
-		regExp = new RegExp("(^|\\s+)"+name+"(\\s+|$)");
-
+		var regExp = new RegExp("(^|\\s+)"+name+"(\\s+|$)");
 		return regExp.test(obj.className);
 	};
 
@@ -976,7 +977,7 @@ define('moxie/core/utils/Dom', ['moxie/core/utils/Env'], function(Env) {
 	*/
 	var addClass = function(obj, name) {
 		if (!hasClass(obj, name)) {
-			obj.className = obj.className === '' ? name : obj.className.replace(/\s+$/, '') + ' ' + name;
+			obj.className = !obj.className ? name : obj.className.replace(/\s+$/, '') + ' ' + name;
 		}
 	};
 
@@ -989,11 +990,12 @@ define('moxie/core/utils/Dom', ['moxie/core/utils/Env'], function(Env) {
 	@param {String} name Class name
 	*/
 	var removeClass = function(obj, name) {
-		var regExp = new RegExp("(^|\\s+)"+name+"(\\s+|$)");
-
-		obj.className = obj.className.replace(regExp, function($0, $1, $2) {
-			return $1 === ' ' && $2 === ' ' ? ' ' : '';
-		});
+		if (obj.className) {
+			var regExp = new RegExp("(^|\\s+)"+name+"(\\s+|$)");
+			obj.className = obj.className.replace(regExp, function($0, $1, $2) {
+				return $1 === ' ' && $2 === ' ' ? ' ' : '';
+			});
+		}
 	};
 
 	/**
@@ -1408,7 +1410,7 @@ define('moxie/core/EventTarget', [
 			@return {Boolean} true by default and false if any handler returned false
 			*/
 			dispatchEvent: function(type) {
-				var uid, list, args, tmpEvt, evt = {};
+				var uid, list, args, tmpEvt, evt = {}, result = true;
 				
 				if (Basic.typeOf(type) !== 'string') {
 					// we can't use original object directly (because of Silverlight)
@@ -1471,10 +1473,12 @@ define('moxie/core/EventTarget', [
 						}
 					});
 					if (queue.length) {
-						Basic.inSeries(queue);
+						Basic.inSeries(queue, function(err) {
+							result = !err;
+						});
 					}
 				}
-				return true;
+				return result;
 			},
 			
 			/**
@@ -1514,7 +1518,7 @@ define('moxie/core/EventTarget', [
 			@protected
 			*/
 			trigger: function() {
-				this.dispatchEvent.apply(this, arguments);
+				return this.dispatchEvent.apply(this, arguments);
 			},
 			
 			
@@ -1781,66 +1785,6 @@ define('moxie/runtime/Runtime', [
 		, _uid = Basic.guid(type + '_')
 		;
 
-
-		/**
-		Runtime (not native one) may operate in browser or client mode.
-		
-		@method _setMode
-		@private
-		@param {Object} [modeCaps] Set of capabilities that do require specific operational mode
-		@param {Object} [defaultMode] The mode to switch to if modeCaps or requiredCaps are empty
-		*/
-		function _setMode(modeCaps, defaultMode) {
-			var mode = null
-			, rc = options && options.required_caps
-			;
-
-			defaultMode = defaultMode || 'browser';
-
-			// mode can be effectively set only once
-			if (this.mode !== null) {
-				return this.mode;
-			}
-
-			if (rc && !Basic.isEmptyObj(modeCaps)) {
-				// loop over required caps and check if they do require the same mode
-				Basic.each(rc, function(value, cap) {
-					if (modeCaps.hasOwnProperty(cap)) {
-						var capMode = modeCaps[cap](value);
-
-						// make sure we always have an array
-						if (typeof(capMode) === 'string') {
-							capMode = [capMode];
-						}
-						
-						if (!mode) {
-							mode = capMode;
-						} else if (!(mode = Basic.arrayIntersect(mode, capMode))) {
-							// if cap requires conflicting mode - runtime cannot fulfill required caps
-							return (mode = false);
-						}
-					}
-				});
-
-				if (mode) {
-					this.mode = Basic.inArray(defaultMode, mode) !== -1 ? defaultMode : mode[0];
-				} else if (mode === false) {
-					this.mode = false;
-				}
-			} 
-			
-			// if mode still not defined
-			if (this.mode === null) { 
-				this.mode = defaultMode;
-			} 
-
-			// once we got the mode, test against all caps
-			if (this.mode && rc && !this.can(rc)) {
-				this.mode = false;
-			}	
-		}
-
-
 		// register runtime in private hash
 		runtimes[_uid] = this;
 
@@ -1903,6 +1847,15 @@ define('moxie/runtime/Runtime', [
 			// e.g. runtime.can('use_http_method', 'put')
 			use_http_method: true
 		}, caps);
+	
+				
+		if (Basic.typeOf(defaultMode) === 'undefined') {
+			defaultMode = 'browser';
+			// default to the mode that is compatible with preferred caps
+			if (options.preferred_caps) {
+				defaultMode = Runtime.getMode(modeCaps, options.preferred_caps, defaultMode);
+			}
+		}
 
 		
 		// small extension factory here (is meant to be extended with actual extensions constructors)
@@ -1974,7 +1927,7 @@ define('moxie/runtime/Runtime', [
 			@private
 			@type {String|Boolean} current mode or false, if none possible
 			*/
-			mode: null,
+			mode: Runtime.getMode(modeCaps, (options && options.required_caps), defaultMode),
 
 			/**
 			id of the DOM container for the runtime (if available)
@@ -2135,7 +2088,10 @@ define('moxie/runtime/Runtime', [
 			}
 		});
 
-		_setMode.call(this, modeCaps, defaultMode);
+		// once we got the mode, test against all caps
+		if (this.mode && options && options.required_caps && !this.can(options.required_caps)) {
+			this.mode = false;
+		}	
 	}
 
 
@@ -2279,6 +2235,53 @@ define('moxie/runtime/Runtime', [
 			}
 		}
 		return null;
+	};
+
+
+	/**
+	Figure out an operational mode for the specified set of capabilities.
+
+	@method getMode
+	@static
+	@param {Object} modeCaps Set of capabilities that depend on particular runtime mode
+	@param {Object} [requiredCaps] Supplied set of capabilities to find operational mode for
+	@param {String|Boolean} [defaultMode='browser'] Default mode to use 
+	@return {String|Boolean} Compatible operational mode
+	*/
+	Runtime.getMode = function(modeCaps, requiredCaps, defaultMode) {
+		var mode = null;
+
+		if (Basic.typeOf(defaultMode) === 'undefined') { // only if not specified
+			defaultMode = 'browser';
+		}
+
+		if (requiredCaps && !Basic.isEmptyObj(modeCaps)) {
+			// loop over required caps and check if they do require the same mode
+			Basic.each(requiredCaps, function(value, cap) {
+				if (modeCaps.hasOwnProperty(cap)) {
+					var capMode = modeCaps[cap](value);
+
+					// make sure we always have an array
+					if (typeof(capMode) === 'string') {
+						capMode = [capMode];
+					}
+					
+					if (!mode) {
+						mode = capMode;
+					} else if (!(mode = Basic.arrayIntersect(mode, capMode))) {
+						// if cap requires conflicting mode - runtime cannot fulfill required caps
+						return (mode = false);
+					}
+				}
+			});
+
+			if (mode) {
+				return Basic.inArray(defaultMode, mode) !== -1 ? defaultMode : mode[0];
+			} else if (mode === false) {
+				return false;
+			}
+		}
+		return defaultMode; 
 	};
 
 
@@ -2927,6 +2930,15 @@ define('moxie/file/FileInput', [
 			@type {String}
 			*/
 			ruid: null,
+
+			/**
+			Unique id of the runtime container. Useful to get hold of it for various manipulations.
+
+			@property shimid
+			@protected
+			@type {String}
+			*/
+			shimid: null,
 			
 			/**
 			Array of selected mOxie.File objects
@@ -2947,6 +2959,7 @@ define('moxie/file/FileInput', [
 
 				self.bind('RuntimeInit', function(e, runtime) {
 					self.ruid = runtime.uid;
+					self.shimid = runtime.shimid;
 
 					self.bind("Ready", function() {
 						self.trigger("Refresh");
@@ -3817,7 +3830,7 @@ define("moxie/xhr/FormData", [
 						self.append.call(self, name + '[' + key + ']', value);
 					});
 				} else {
-					value = value.toString(); // according to specs value might be either Blob or String
+					value = (value || false).toString(); // according to specs value might be either Blob or String
 
 					if (!_fields[name]) {
 						_fields[name] = [];
@@ -5954,6 +5967,7 @@ define("moxie/runtime/html5/Runtime", [
 						return Env.can('return_response_type', responseType);
 					}
 				},
+				return_status_code: True,
 				report_upload_progress: Test(window.XMLHttpRequest && new XMLHttpRequest().upload),
 				resize_image: function() {
 					return I.can('access_binary') && Env.can('create_canvas');
@@ -5965,7 +5979,8 @@ define("moxie/runtime/html5/Runtime", [
 					return I.can('select_file') && Env.browser === 'Chrome' && Env.version >= 21;
 				},
 				select_multiple: function() {
-					return I.can('select_file') && !(Env.browser === 'Safari' && Env.OS === 'Windows');
+					// it is buggy on Safari Windows and iOS
+					return I.can('select_file') && !(Env.browser === 'Safari' && Env.OS === 'Windows') && Env.OS !== 'iOS';
 				},
 				send_binary_string: Test(window.XMLHttpRequest && (new XMLHttpRequest().sendAsBinary || (window.Uint8Array && window.ArrayBuffer))),
 				send_custom_headers: Test(window.XMLHttpRequest),
@@ -6651,7 +6666,7 @@ define("moxie/runtime/html5/file/FileReader", [
  * Contributing: http://www.plupload.com/contributing
  */
 
- /*global ActiveXObject:true */
+/*global ActiveXObject:true */
 
 /**
 @class moxie/runtime/html5/xhr/XMLHttpRequest
@@ -6660,6 +6675,7 @@ define("moxie/runtime/html5/file/FileReader", [
 define("moxie/runtime/html5/xhr/XMLHttpRequest", [
 	"moxie/runtime/html5/Runtime",
 	"moxie/core/utils/Basic",
+	"moxie/core/utils/Mime",
 	"moxie/core/utils/Url",
 	"moxie/file/File",
 	"moxie/file/Blob",
@@ -6667,7 +6683,7 @@ define("moxie/runtime/html5/xhr/XMLHttpRequest", [
 	"moxie/core/Exceptions",
 	"moxie/core/utils/Env",
 	"moxie/core/JSON"
-], function(extensions, Basic, Url, File, Blob, FormData, x, Env, parseJSON) {
+], function(extensions, Basic, Mime, Url, File, Blob, FormData, x, Env, parseJSON) {
 	
 	function XMLHttpRequest() {
 		var self = this
@@ -6871,6 +6887,11 @@ define("moxie/runtime/html5/xhr/XMLHttpRequest", [
 								}
 							}
 							file.name = _filename;
+
+							// pre-webkit Opera doesn't set type property on the blob response
+							if (!file.type) {
+								file.type = Mime.getFileMime(_filename);
+							}
 							return file;
 
 						case 'json':
@@ -8239,7 +8260,7 @@ define("moxie/runtime/html5/image/Image", [
 	
 	function HTML5Image() {
 		var me = this
-		, _img, _imgInfo, _canvas, _binStr, _srcBlob
+		, _img, _imgInfo, _canvas, _binStr, _blob
 		, _modified = false // is set true whenever image is modified
 		, _preserveHeaders = true
 		;
@@ -8254,18 +8275,14 @@ define("moxie/runtime/html5/image/Image", [
 					throw new x.RuntimeError(x.RuntimeError.NOT_SUPPORTED_ERR);
 				}
 
+				_blob = blob;
+
 				if (blob.isDetached()) {
-					_srcBlob = {
-						name: blob.name,
-						size: blob.size,
-						type: blob.type
-					};
 					_binStr = blob.getSource();
 					_preload.call(this, _binStr);
 					return;
 				} else {
-					_srcBlob = blob.getSource();
-					_readAsDataUrl.call(this, _srcBlob, function(dataUrl) {
+					_readAsDataUrl.call(this, blob.getSource(), function(dataUrl) {
 						if (asBinary) {
 							_binStr = _toBinary(dataUrl);
 						}
@@ -8277,11 +8294,11 @@ define("moxie/runtime/html5/image/Image", [
 			loadFromImage: function(img, exact) {
 				this.meta = img.meta;
 
-				_srcBlob = {
+				_blob = new Blob(null, {
 					name: img.name,
 					size: img.size,
 					type: img.type
-				};
+				});
 
 				_preload.call(this, exact ? (_binStr = img.getAsBinaryString()) : img.getAsDataURL());
 			},
@@ -8296,9 +8313,9 @@ define("moxie/runtime/html5/image/Image", [
 				info = {
 					width: _getImg().width || 0,
 					height: _getImg().height || 0,
-					type: _srcBlob.type || Mime.getFileMime(_srcBlob.name),
-					size: _binStr && _binStr.length || _srcBlob.size || 0,
-					name: _srcBlob.name || '',
+					type: _blob.type || Mime.getFileMime(_blob.name),
+					size: _binStr && _binStr.length || _blob.size || 0,
+					name: _blob.name || '',
 					meta: _imgInfo && _imgInfo.meta || this.meta || {}
 				};
 
@@ -8441,7 +8458,7 @@ define("moxie/runtime/html5/image/Image", [
 				comp.trigger('load');
 			};
 
-			_img.src = /^data:[^;]*;base64,/.test(str) ? str : _toDataUrl(str, _srcBlob.type);
+			_img.src = /^data:[^;]*;base64,/.test(str) ? str : _toDataUrl(str, _blob.type);
 		}
 
 
@@ -8464,18 +8481,27 @@ define("moxie/runtime/html5/image/Image", [
 		}
 
 		function _downsize(width, height, crop, preserveHeaders) {
-			var self = this, ctx, scale, mathFn, x, y, img, imgWidth, imgHeight, orientation;
+			var self = this
+			, scale
+			, mathFn
+			, x = 0
+			, y = 0
+			, img
+			, destWidth
+			, destHeight
+			, orientation
+			;
 
-			_preserveHeaders = preserveHeaders; // we will need to check this on export
+			_preserveHeaders = preserveHeaders; // we will need to check this on export (see getAsBinaryString())
 
 			// take into account orientation tag
 			orientation = (this.meta && this.meta.tiff && this.meta.tiff.Orientation) || 1;
 
 			if (Basic.inArray(orientation, [5,6,7,8]) !== -1) { // values that require 90 degree rotation
 				// swap dimensions
-				var mem = width;
+				var tmp = width;
 				width = height;
-				height = mem;
+				height = tmp;
 			}
 
 			img = _getImg();
@@ -8490,34 +8516,40 @@ define("moxie/runtime/html5/image/Image", [
 				return;
 			}
 
-			imgWidth = Math.round(img.width * scale);
-			imgHeight = Math.round(img.height * scale);
-
 			// prepare canvas if necessary
 			if (!_canvas) {
 				_canvas = document.createElement("canvas");
 			}
 
-			ctx = _canvas.getContext('2d');
+			// calculate dimensions of proportionally resized image
+			destWidth = Math.round(img.width * scale);	
+			destHeight = Math.round(img.height * scale);
+
 
 			// scale image and canvas
 			if (crop) {
 				_canvas.width = width;
 				_canvas.height = height;
+
+				// if dimensions of the resulting image still larger than canvas, center it
+				if (destWidth > width) {
+					x = Math.round((destWidth - width) / 2);
+				}
+
+				if (destHeight > height) {
+					y = Math.round((destHeight - height) / 2);
+				}
 			} else {
-				_canvas.width = imgWidth;
-				_canvas.height = imgHeight;
+				_canvas.width = destWidth;
+				_canvas.height = destHeight;
 			}
 
-			// if dimensions of the resulting image still larger than canvas, center it
-			x = imgWidth > _canvas.width ? Math.round((imgWidth - _canvas.width) / 2)  : 0;
-			y = imgHeight > _canvas.height ? Math.round((imgHeight - _canvas.height) / 2) : 0;
-
+			// rotate if required, according to orientation tag
 			if (!_preserveHeaders) {
 				_rotateToOrientaion(_canvas.width, _canvas.height, orientation);
 			}
 
-			_drawToCanvas.call(this, img, _canvas, -x, -y, imgWidth, imgHeight);
+			_drawToCanvas.call(this, img, _canvas, -x, -y, destWidth, destHeight);
 
 			this.width = _canvas.width;
 			this.height = _canvas.height;
@@ -8615,7 +8647,7 @@ define("moxie/runtime/html5/image/Image", [
 				_imgInfo.purge();
 				_imgInfo = null;
 			}
-			_binStr = _img = _canvas = null;
+			_binStr = _img = _canvas = _blob = null;
 			_modified = false;
 		}
 	}
@@ -8764,11 +8796,11 @@ define("moxie/runtime/flash/Runtime", [
 			upload_filesize: function(size) {
 				return Basic.parseSizeStr(size) >= 2097152 ? 'client' : 'browser';
 			}
-		}, 'client');
+		});
 
 
-		// minimal requirement Flash Player 10
-		if (getShimVersion() < 10) {
+		// minimal requirement for Flash Player version
+		if (getShimVersion() < 11.3) {
 			this.mode = false; // with falsy mode, runtime won't operable, no matter what the mode was before
 		}
 
